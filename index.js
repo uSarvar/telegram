@@ -32,7 +32,7 @@ bot.on('message', async (msg) => {
       await bot.sendMessage(
         chatId,
         `⚠️ <b>DIQQAT!</b>\n\n` +
-        `🔁 <b>${num}</b> raqami bu topikda takrorlandi!\n` +
+        `🔁 <b>${num}</b> ID takrorlandi!\n` +
         `👤 <a href="tg://user?id=${ADMIN_ID}">Admin</a>`,
         {
           parse_mode: 'HTML',
