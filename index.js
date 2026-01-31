@@ -69,7 +69,7 @@ bot.on('message', async (msg) => {
           `🚨 <b>TAKROR ANIQLANDI</b>\n\n` +
 
           `🔢 <b>ID</b>\n` +
-          `  <b><code>${num}</code></b>  \n\n` +
+          `▶▶ <b><code>${num}</code></b>  ◀◀\n\n` +
 
           `📌 <b>1-yuborilgan xabar:</b>\n` +
           `🔗 <a href="${firstMessageLink}">Oldingi xabarni ochish</a>\n\n` +
@@ -78,7 +78,7 @@ bot.on('message', async (msg) => {
           `🔗 <a href="${repeatMessageLink}">Takror xabarni ochish</a>\n\n` +
 
           `👮 <b>Nazorat:</b>\n` +
-          `<a href="tg://user?id=${ADMIN_ID}">Divanchi</a>`;
+          `<a href="tg://user?id=${ADMIN_ID}">Admin</a>`;
 
         await bot.sendMessage(chatId, alertMessage, {
           parse_mode: 'HTML',
