@@ -3,6 +3,16 @@ const TelegramBot = require('node-telegram-bot-api');
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
 
+if (!TOKEN) {
+  console.error('❌ BOT_TOKEN topilmadi! Railway Variables ni tekshiring.');
+  process.exit(1);
+}
+
+if (!ADMIN_ID) {
+  console.error('❌ ADMIN_ID topilmadi!');
+  process.exit(1);
+}
+
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 const topicNumbers = {};
@@ -13,11 +23,11 @@ function extractFourDigitNumbers(text) {
 }
 
 bot.on('message', async (msg) => {
+  if (!['group', 'supergroup'].includes(msg.chat.type)) return;
+
   const chatId = msg.chat.id;
   const topicId = msg.message_thread_id || 0;
   const text = msg.text || '';
-
-  if (!['group', 'supergroup'].includes(msg.chat.type)) return;
 
   if (!topicNumbers[chatId]) topicNumbers[chatId] = {};
   if (!topicNumbers[chatId][topicId]) {
