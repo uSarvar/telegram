@@ -24,6 +24,12 @@ function extractFourDigitNumbers(text) {
 }
 
 bot.on('message', async (msg) => {
+  bot.on('message', async (msg) => {
+  console.log('📩 Yangi xabar keldi:', {
+    chatType: msg.chat.type,
+    text: msg.text,
+    topicId: msg.message_thread_id
+  });
   if (!['group', 'supergroup'].includes(msg.chat.type)) return;
 
   const chatId = msg.chat.id;
