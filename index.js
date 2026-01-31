@@ -68,8 +68,7 @@ bot.on('message', async (msg) => {
         const alertMessage =
           `🚨 <b>TAKROR ANIQLANDI</b>\n\n` +
 
-          `🔢 <b>ID</b>\n` +
-          `▶▶ <b><code>${num}</code></b>  ◀◀\n\n` +
+          `🔢 <b>ID</b>\ + `▶▶ <b><code>${num}</code></b>  ◀◀\n\n` +
 
           `📌 <b>1-yuborilgan xabar:</b>\n` +
           `🔗 <a href="${firstMessageLink}">Oldingi xabarni ochish</a>\n\n` +
