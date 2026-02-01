@@ -61,7 +61,7 @@ bot.on('message', async (msg) => {
 
          const alertMessage =
            '🚨 <b>TAKROR ANIQLANDI</b>\n\n' +
-           '🔢 ▶▶  <b><code>' + num + '</code></b>  ◀◀\n\n' +
+           '🔢 <b><code>' + num + '</code></b>\n\n' +
            '📌 <a href="' + getMessageLink(chatId, firstId) + '"><b>1-yuborilgan xabar</b></a>\n\n' +
            '📌 <a href="' + getMessageLink(chatId, msg.message_id) + '"><b>Takror yuborilgan xabar</b></a>\n\n' +
            '👮 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
