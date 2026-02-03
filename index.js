@@ -133,7 +133,7 @@ bot.on('message', async (msg) => {
         const alertMessage =
           '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
           'ID: <b>' + canonicalId + '</b>\n\n' +
-          '📌 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan xabar</a>\n' +
+          '📌 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan xabar</a>\n\n' +
           '📌 <a href="' + getMessageLink(chatId, msg.message_id) + '">Takror yuborilgan xabar</a>\n\n' +
           '👮 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
 
