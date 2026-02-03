@@ -23,10 +23,10 @@ console.log('Bot ishga tushdi');
 /* ===============================
    XOTIRA STRUKTURALARI
 ================================ */
-// Asosiy: kanonik ID -> birinchi xabar
+// Kanonik ID -> birinchi xabar
 const topicIds = {};
 
-// Qo‘shimcha: faqat raqam -> harfli ID (alias)
+// Raqam -> kanonik (harfli) ID
 const numberAlias = {};
 
 /* ===============================
@@ -43,7 +43,7 @@ function extractIds(text) {
   // Faqat 4–6 xonali raqam
   const numberRegex = /\b\d{4,6}\b/g;
 
-  // Kirill → lotin xarita
+  // Kirill → lotin
   const cyrToLatMap = {
     'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Н': 'H',
     'К': 'K', 'М': 'M', 'О': 'O', 'Р': 'P', 'Т': 'T',
@@ -70,7 +70,7 @@ function extractIds(text) {
     usedNumbers.add(digits);
   }
 
-  // 2️⃣ Faqat raqamli ID’lar (agar harfli bilan band bo‘lmagan bo‘lsa)
+  // 2️⃣ Faqat raqamli ID’lar (agar harfli bilan band bo‘lmasa)
   const numbers = text.match(numberRegex) || [];
   numbers.forEach(num => {
     if (!usedNumbers.has(num)) {
@@ -111,22 +111,39 @@ bot.on('message', async (msg) => {
     const ids = extractIds(msg.text);
     if (!ids.length) return;
 
-    for (let id of ids) {
-      let canonicalId = id;
+    for (let rawId of ids) {
+      let canonicalId = rawId;
 
-      // Agar bu faqat raqam bo‘lsa va oldin harfli ID bo‘lsa
-      if (/^\d{4,6}$/.test(id) && numberAlias[chatId][topicId][id]) {
-        canonicalId = numberAlias[chatId][topicId][id];
+      /* ===============================
+         1️⃣ Agar faqat raqam bo‘lsa,
+            oldin harfli ID mavjudmi?
+      ================================ */
+      if (/^\d{4,6}$/.test(rawId) && numberAlias[chatId][topicId][rawId]) {
+        canonicalId = numberAlias[chatId][topicId][rawId];
       }
 
-      // Agar bu harfli ID bo‘lsa → raqamni alias qilib bog‘laymiz
+      /* ===============================
+         2️⃣ Agar harfli ID bo‘lsa,
+            u ENG USTUN hisoblanadi
+      ================================ */
       const match = canonicalId.match(/^([A-Z])-(\d{4,6})$/);
       if (match) {
         const digits = match[2];
+
+        // Alias yozamiz
         numberAlias[chatId][topicId][digits] = canonicalId;
+
+        // 🔥 MUHIM: agar oldin raqamli ID saqlangan bo‘lsa → ko‘chiramiz
+        if (topicIds[chatId][topicId][digits]) {
+          const firstMsgId = topicIds[chatId][topicId][digits];
+          delete topicIds[chatId][topicId][digits];
+          topicIds[chatId][topicId][canonicalId] = firstMsgId;
+        }
       }
 
-      // TAKROR TEKSHIRUV
+      /* ===============================
+         3️⃣ TAKROR TEKSHIRUV
+      ================================ */
       if (topicIds[chatId][topicId][canonicalId]) {
         const firstMessageId = topicIds[chatId][topicId][canonicalId];
 
@@ -142,7 +159,6 @@ bot.on('message', async (msg) => {
           reply_to_message_id: msg.message_id,
           message_thread_id: topicId
         });
-
       } else {
         // Birinchi marta kelgan ID
         topicIds[chatId][topicId][canonicalId] = msg.message_id;
