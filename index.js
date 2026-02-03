@@ -27,28 +27,18 @@ console.log('Bot ishga tushdi');
 const topicIds = {};
 
 /* ===============================
-   YORDAMCHI FUNKSIYALAR
+   ID ANIQLASH (BUG-SIZ, UNIVERSAL)
 ================================ */
-
-/**
- * ID formatlari:
- *  - K1234, K-1234, К1234, к-1234
- *  - A99999
- *  - 1234, 12345, 123456
- * Ichkarida:
- *  - K-1234
- *  - A-99999
- *  - 1234
- */
 function extractIds(text) {
   if (!text) return [];
 
   const results = new Set();
+  const usedNumbers = new Set();
 
-  // 1 harf (lotin/kirill) + optional "-" + 4-6 raqam
+  // Harf (lotin/kirill) + optional "-" + 4–6 raqam
   const letterRegex = /\b([A-Za-zА-Яа-я])[-–—]?\s*(\d{4,6})\b/g;
 
-  // faqat 4-6 xonali raqam
+  // Faqat 4–6 xonali raqam
   const numberRegex = /\b\d{4,6}\b/g;
 
   // Kirill → lotin xarita
@@ -63,7 +53,7 @@ function extractIds(text) {
 
   let match;
 
-  // 🔹 Harfli ID'lar
+  // 1️⃣ Avval HARFLI ID’lar
   while ((match = letterRegex.exec(text)) !== null) {
     let letter = match[1];
     const digits = match[2];
@@ -75,15 +65,23 @@ function extractIds(text) {
     }
 
     results.add(letter + '-' + digits);
+    usedNumbers.add(digits); // shu raqam band qilinadi
   }
 
-  // 🔹 Faqat raqamli ID'lar
+  // 2️⃣ Keyin FAQAT RAQAMLI ID’lar (agar harfli bo‘lmasa)
   const numbers = text.match(numberRegex) || [];
-  numbers.forEach(num => results.add(num));
+  numbers.forEach(num => {
+    if (!usedNumbers.has(num)) {
+      results.add(num);
+    }
+  });
 
   return Array.from(results);
 }
 
+/* ===============================
+   XABAR LINKI
+================================ */
 function getMessageLink(chatId, messageId) {
   const cleanChatId = String(chatId).replace('-100', '');
   return 'https://t.me/c/' + cleanChatId + '/' + messageId;
@@ -113,7 +111,7 @@ bot.on('message', async (msg) => {
 
         const alertMessage =
           '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
-          '<b>ID: </b> <b><code>' + id + '</code></b>\n\n' +
+          '<b><code>' + id + '</code></b>  ◀◀\n\n' +
           '📌 <a href="' + getMessageLink(chatId, firstMessageId) + '"><b>1-yuborilgan xabar</b></a>\n\n' +
           '📌 <a href="' + getMessageLink(chatId, msg.message_id) + '"><b>Takror yuborilgan xabar</b></a>\n\n' +
           '👮 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
@@ -124,7 +122,7 @@ bot.on('message', async (msg) => {
           message_thread_id: topicId
         });
       } else {
-        // birinchi marta kelgan ID
+        // Birinchi marta kelgan ID
         topicIds[chatId][topicId][id] = msg.message_id;
       }
     }
