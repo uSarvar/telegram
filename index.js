@@ -21,13 +21,16 @@ const bot = new TelegramBot(TOKEN, {
 console.log('Bot ishga tushdi');
 
 /* ===============================
-   XOTIRA
-   topicIds[chatId][topicId][ID] = firstMessageId
+   XOTIRA STRUKTURALARI
 ================================ */
+// Asosiy: kanonik ID -> birinchi xabar
 const topicIds = {};
 
+// Qo‘shimcha: faqat raqam -> harfli ID (alias)
+const numberAlias = {};
+
 /* ===============================
-   ID ANIQLASH (BUG-SIZ, UNIVERSAL)
+   ID ANIQLASH
 ================================ */
 function extractIds(text) {
   if (!text) return [];
@@ -35,9 +38,8 @@ function extractIds(text) {
   const results = new Set();
   const usedNumbers = new Set();
 
-  // Harf (lotin/kirill) + optional "-" + 4–6 raqam
+  // Harf + optional "-" + 4–6 raqam
   const letterRegex = /\b([A-Za-zА-Яа-я])[-–—]?\s*(\d{4,6})\b/g;
-
   // Faqat 4–6 xonali raqam
   const numberRegex = /\b\d{4,6}\b/g;
 
@@ -53,7 +55,7 @@ function extractIds(text) {
 
   let match;
 
-  // 1️⃣ Avval HARFLI ID’lar
+  // 1️⃣ Harfli ID’lar
   while ((match = letterRegex.exec(text)) !== null) {
     let letter = match[1];
     const digits = match[2];
@@ -65,10 +67,10 @@ function extractIds(text) {
     }
 
     results.add(letter + '-' + digits);
-    usedNumbers.add(digits); // shu raqam band qilinadi
+    usedNumbers.add(digits);
   }
 
-  // 2️⃣ Keyin FAQAT RAQAMLI ID’lar (agar harfli bo‘lmasa)
+  // 2️⃣ Faqat raqamli ID’lar (agar harfli bilan band bo‘lmagan bo‘lsa)
   const numbers = text.match(numberRegex) || [];
   numbers.forEach(num => {
     if (!usedNumbers.has(num)) {
@@ -99,21 +101,40 @@ bot.on('message', async (msg) => {
     const topicId = msg.message_thread_id;
     if (!topicId) return;
 
+    // Xotirani tayyorlash
     if (!topicIds[chatId]) topicIds[chatId] = {};
     if (!topicIds[chatId][topicId]) topicIds[chatId][topicId] = {};
+
+    if (!numberAlias[chatId]) numberAlias[chatId] = {};
+    if (!numberAlias[chatId][topicId]) numberAlias[chatId][topicId] = {};
 
     const ids = extractIds(msg.text);
     if (!ids.length) return;
 
-    for (const id of ids) {
-      if (topicIds[chatId][topicId][id]) {
-        const firstMessageId = topicIds[chatId][topicId][id];
+    for (let id of ids) {
+      let canonicalId = id;
+
+      // Agar bu faqat raqam bo‘lsa va oldin harfli ID bo‘lsa
+      if (/^\d{4,6}$/.test(id) && numberAlias[chatId][topicId][id]) {
+        canonicalId = numberAlias[chatId][topicId][id];
+      }
+
+      // Agar bu harfli ID bo‘lsa → raqamni alias qilib bog‘laymiz
+      const match = canonicalId.match(/^([A-Z])-(\d{4,6})$/);
+      if (match) {
+        const digits = match[2];
+        numberAlias[chatId][topicId][digits] = canonicalId;
+      }
+
+      // TAKROR TEKSHIRUV
+      if (topicIds[chatId][topicId][canonicalId]) {
+        const firstMessageId = topicIds[chatId][topicId][canonicalId];
 
         const alertMessage =
           '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
-          '<b><code>' + id + '</code></b>  ◀◀\n\n' +
-          '📌 <a href="' + getMessageLink(chatId, firstMessageId) + '"><b>1-yuborilgan xabar</b></a>\n\n' +
-          '📌 <a href="' + getMessageLink(chatId, msg.message_id) + '"><b>Takror yuborilgan xabar</b></a>\n\n' +
+          'ID: <b>' + canonicalId + '</b>\n\n' +
+          '📌 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan xabar</a>\n' +
+          '📌 <a href="' + getMessageLink(chatId, msg.message_id) + '">Takror yuborilgan xabar</a>\n\n' +
           '👮 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
 
         await bot.sendMessage(chatId, alertMessage, {
@@ -121,9 +142,10 @@ bot.on('message', async (msg) => {
           reply_to_message_id: msg.message_id,
           message_thread_id: topicId
         });
+
       } else {
         // Birinchi marta kelgan ID
-        topicIds[chatId][topicId][id] = msg.message_id;
+        topicIds[chatId][topicId][canonicalId] = msg.message_id;
       }
     }
   } catch (err) {
