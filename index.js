@@ -26,48 +26,26 @@ console.log('Bot ishga tushdi');
 const topicIds = {};
 
 /* ===============================
-   ID PARSER (3–4 xonali)
+   ID PARSER
+   → faqat to‘g‘ri ID bo‘lsa qaytaradi
+   → xato holatda null
 ================================ */
-function parseId(text) {
+function parseValidId(text) {
   if (!text) return null;
 
-  // harf + optional "-" + raqamlar
-  const match = text.match(/\b([A-Za-zА-Яа-я])[-–—]?(\d+)\b/);
-
-  // faqat raqam bo‘lsa
-  if (!match) {
-    if (/\b\d+\b/.test(text)) {
-      return { error: 'FORMAT' };
-    }
-    return null;
-  }
+  const match = text.match(/\b([KkКк])[-–—]?(\d{3,4})\b/);
+  if (!match) return null;
 
   const letter = match[1];
   const digits = match[2];
 
-  // Raqam uzunligi: FAQAT 3 yoki 4
-  if (digits.length < 3 || digits.length > 4) {
-    return { error: 'LENGTH' };
-  }
-
-  // Lotin K
+  // faqat lotin K yoki k
   if (letter === 'K' || letter === 'k') {
-    return {
-      id: 'K-' + digits,
-      warning: null
-    };
+    return 'K-' + digits;
   }
 
-  // Kirill K
-  if (letter === 'К' || letter === 'к') {
-    return {
-      id: 'K-' + digits,
-      warning: 'CYRILLIC'
-    };
-  }
-
-  // Boshqa harf
-  return { error: 'LETTER' };
+  // kirill bo‘lsa — qabul qilmaymiz, jim qolamiz
+  return null;
 }
 
 /* ===============================
@@ -93,52 +71,18 @@ bot.on('message', async (msg) => {
     if (!topicIds[chatId]) topicIds[chatId] = {};
     if (!topicIds[chatId][topicId]) topicIds[chatId][topicId] = {};
 
-    const result = parseId(msg.text);
-    if (!result) return;
+    // 👉 faqat to‘g‘ri ID bo‘lsa ishlaymiz
+    const canonicalId = parseValidId(msg.text);
+    if (!canonicalId) return;
 
-    /* ===== XATO HOLATLAR ===== */
-    if (result.error) {
-      let text = '';
-
-      if (result.error === 'FORMAT') {
-        text = '❗️ <b>ID xato kiritildi</b>\n\nID <b>K-123</b> yoki <b>K-1234</b> formatida yozilishi kerak.';
-      } else if (result.error === 'LENGTH') {
-        text = '❗️ <b>ID xato</b>\n\nID faqat <b>3 yoki 4 xonali</b> bo‘lishi kerak.';
-      } else if (result.error === 'LETTER') {
-        text = '❗️ <b>ID xato</b>\n\nID faqat lotin <b>K-123</b> yoki <b>K-1234</b> formatida yozilishi kerak.';
-      }
-
-      await bot.sendMessage(chatId, text, {
-        parse_mode: 'HTML',
-        reply_to_message_id: msg.message_id,
-        message_thread_id: topicId
-      });
-      return;
-    }
-
-    const canonicalId = result.id;
-
-    /* ===== KIRILL OGOHLANTIRISH ===== */
-    if (result.warning === 'CYRILLIC') {
-      await bot.sendMessage(
-        chatId,
-        '⚠️ <b>Ogohlantirish</b>\n\nID kirill harfida yozilgan.\nIltimos, lotin <b>K-123</b> yoki <b>K-1234</b> formatidan foydalaning.',
-        {
-          parse_mode: 'HTML',
-          reply_to_message_id: msg.message_id,
-          message_thread_id: topicId
-        }
-      );
-    }
-
-    /* ===== TAKROR TEKSHIRUV ===== */
+    // 👉 faqat TAKROR bo‘lsa javob beramiz
     if (topicIds[chatId][topicId][canonicalId]) {
       const firstMessageId = topicIds[chatId][topicId][canonicalId];
 
       const alertMessage =
         '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
         'ID: <b>' + canonicalId + '</b>\n\n' +
-        '🔗 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan ID</a>\n\n' +
+        '🔗 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan ID</a>\n' +
         '🔗 <a href="' + getMessageLink(chatId, msg.message_id) + '">Takror yuborilgan ID</a>\n\n' +
         '👨🏻‍💻 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
 
@@ -148,6 +92,7 @@ bot.on('message', async (msg) => {
         message_thread_id: topicId
       });
     } else {
+      // birinchi marta kelgan ID — jim
       topicIds[chatId][topicId][canonicalId] = msg.message_id;
     }
 
