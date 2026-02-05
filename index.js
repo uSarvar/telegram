@@ -23,29 +23,29 @@ console.log('Bot ishga tushdi');
 /* ===============================
    XOTIRA
 ================================ */
+
+// ID takror nazorati
 const topicIds = {};
 
+// Xabar matnlari cache
+const messageCache = {};
+
+// Tahrirlar tarixi
+const editHistory = {};
+
 /* ===============================
-   ID PARSER
+   VALID ID PARSER
    → faqat to‘g‘ri ID bo‘lsa qaytaradi
-   → xato holatda null
+   → aks holda null
 ================================ */
 function parseValidId(text) {
   if (!text) return null;
 
-  const match = text.match(/\b([KkКк])[-–—]?(\d{3,4})\b/);
+  const match = text.match(/\b([Kk])[-–—]?(\d{3,4})\b/);
   if (!match) return null;
 
-  const letter = match[1];
   const digits = match[2];
-
-  // faqat lotin K yoki k
-  if (letter === 'K' || letter === 'k') {
-    return 'K-' + digits;
-  }
-
-  // kirill bo‘lsa — qabul qilmaymiz, jim qolamiz
-  return null;
+  return 'K-' + digits;
 }
 
 /* ===============================
@@ -57,7 +57,8 @@ function getMessageLink(chatId, messageId) {
 }
 
 /* ===============================
-   ASOSIY HANDLER
+   MESSAGE HANDLER
+   → faqat ID takror bo‘lsa javob
 ================================ */
 bot.on('message', async (msg) => {
   try {
@@ -68,14 +69,18 @@ bot.on('message', async (msg) => {
     const topicId = msg.message_thread_id;
     if (!topicId) return;
 
+    // Cache saqlash (edit uchun)
+    if (!messageCache[chatId]) messageCache[chatId] = {};
+    messageCache[chatId][msg.message_id] = msg.text;
+
+    // Topic xotirasi
     if (!topicIds[chatId]) topicIds[chatId] = {};
     if (!topicIds[chatId][topicId]) topicIds[chatId][topicId] = {};
 
-    // 👉 faqat to‘g‘ri ID bo‘lsa ishlaymiz
     const canonicalId = parseValidId(msg.text);
-    if (!canonicalId) return;
+    if (!canonicalId) return; // noto‘g‘ri ID → jim
 
-    // 👉 faqat TAKROR bo‘lsa javob beramiz
+    // TAKROR bo‘lsa
     if (topicIds[chatId][topicId][canonicalId]) {
       const firstMessageId = topicIds[chatId][topicId][canonicalId];
 
@@ -92,12 +97,70 @@ bot.on('message', async (msg) => {
         message_thread_id: topicId
       });
     } else {
-      // birinchi marta kelgan ID — jim
+      // Birinchi marta → jim
       topicIds[chatId][topicId][canonicalId] = msg.message_id;
     }
 
   } catch (err) {
-    console.error('Xato:', err);
+    console.error('Message handler error:', err);
+  }
+});
+
+/* ===============================
+   EDITED MESSAGE HANDLER
+   → admin alert + diff log + tarix
+================================ */
+bot.on('edited_message', async (msg) => {
+  try {
+    if (!['group', 'supergroup'].includes(msg.chat.type)) return;
+
+    const chatId = msg.chat.id;
+    const topicId = msg.message_thread_id;
+    if (!topicId) return;
+
+    if (!messageCache[chatId]) messageCache[chatId] = {};
+
+    const oldText =
+      messageCache[chatId][msg.message_id] || '(old text not found)';
+    const newText = msg.text || '(no text)';
+
+    // Cache yangilash
+    messageCache[chatId][msg.message_id] = newText;
+
+    // Tarix saqlash
+    if (!editHistory[chatId]) editHistory[chatId] = {};
+    if (!editHistory[chatId][msg.message_id]) {
+      editHistory[chatId][msg.message_id] = [];
+    }
+
+    editHistory[chatId][msg.message_id].push({
+      oldText,
+      newText,
+      editedAt: new Date().toISOString()
+    });
+
+    // Console log
+    console.log('EDITED MESSAGE:', {
+      chatId,
+      messageId: msg.message_id,
+      oldText,
+      newText
+    });
+
+    // Adminga qisqa xabar
+    await bot.sendMessage(
+      chatId,
+      '✏️ <b>Xabar tahrirlandi</b>\n\n' +
+      '👨🏻‍💻 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>',
+      {
+        parse_mode: 'HTML',
+        reply_to_message_id: msg.message_id,
+        message_thread_id: topicId
+      }
+    );
+
+  } catch (err) {
+    console.error('Edited message error:', err);
   }
 });
 
