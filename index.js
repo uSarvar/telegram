@@ -124,7 +124,7 @@ bot.on('message', async (msg) => {
 bot.on('edited_message', async (msg) => {
   try {
     if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return;
+    if (!msg.text) return; // reaksiya bo‘lsa chiqmaydi
 
     const chatId = msg.chat.id;
     const topicId = msg.message_thread_id;
@@ -132,12 +132,16 @@ bot.on('edited_message', async (msg) => {
 
     if (!messageCache[chatId]) messageCache[chatId] = {};
 
-    const oldText = messageCache[chatId][msg.message_id];
-    if (!oldText || oldText === msg.text) return; // matn o‘zgarmagan
-
+    const oldText = messageCache[chatId][msg.message_id] || '(topilmadi)';
     const newText = msg.text;
+
+    // Agar matn aynan bir xil bo‘lsa → jim
+    if (oldText === newText) return;
+
+    // Cache update
     messageCache[chatId][msg.message_id] = newText;
 
+    // Tarix saqlash
     if (!editHistory[chatId]) editHistory[chatId] = {};
     if (!editHistory[chatId][msg.message_id]) {
       editHistory[chatId][msg.message_id] = [];
@@ -149,18 +153,21 @@ bot.on('edited_message', async (msg) => {
       editedAt: new Date().toISOString()
     });
 
-    console.log('EDITED TEXT:', { oldText, newText });
+    console.log('EDIT DIFF:', { oldText, newText });
 
-    await bot.sendMessage(
-      chatId,
+    const alertMessage =
       '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
-      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`,
-      {
-        parse_mode: 'HTML',
-        reply_to_message_id: msg.message_id,
-        message_thread_id: topicId
-      }
-    );
+      '<b>Oldingi:</b>\n' +
+      `<code>${oldText}</code>\n\n` +
+      '<b>Yangi:</b>\n' +
+      `<code>${newText}</code>\n\n` +
+      `👮 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+
+    await bot.sendMessage(chatId, alertMessage, {
+      parse_mode: 'HTML',
+      reply_to_message_id: msg.message_id,
+      message_thread_id: topicId
+    });
 
   } catch (err) {
     console.error('Edit error:', err);
