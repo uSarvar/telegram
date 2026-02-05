@@ -1,3 +1,27 @@
+function getWordLevelChanges(oldText, newText) {
+  const oldWords = oldText.split(/\s+/);
+  const newWords = newText.split(/\s+/);
+
+  const maxLen = Math.max(oldWords.length, newWords.length);
+  const changes = [];
+
+  for (let i = 0; i < maxLen; i++) {
+    const o = oldWords[i];
+    const n = newWords[i];
+
+    if (o === n) continue;
+
+    if (o && !n) {
+      changes.push(`➖ <code>${o}</code>`);
+    } else if (!o && n) {
+      changes.push(`➕ <code>${n}</code>`);
+    } else if (o && n && o !== n) {
+      changes.push(`<code>${o}</code> → <code>${n}</code>`);
+    }
+  }
+
+  return changes;
+}
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
@@ -157,7 +181,7 @@ bot.on('message', async (msg) => {
 bot.on('edited_message', async (msg) => {
   try {
     if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return; // reaction / non-text edit
+    if (!msg.text) return;
 
     const chatId = msg.chat.id;
     const topicId = msg.message_thread_id;
@@ -170,30 +194,20 @@ bot.on('edited_message', async (msg) => {
 
     if (!oldText || oldText === newText) return;
 
-    const { oldDiff, newDiff } = getTextDiff(oldText, newText);
+    const changes = getWordLevelChanges(oldText, newText);
+    if (!changes.length) return;
 
-    // update cache
+    // cache update
     messageCache[chatId][msg.message_id] = newText;
 
-    // save history (RAM)
-    if (!editHistory[chatId]) editHistory[chatId] = {};
-    if (!editHistory[chatId][msg.message_id]) {
-      editHistory[chatId][msg.message_id] = [];
-    }
-
-    editHistory[chatId][msg.message_id].push({
-      oldDiff,
-      newDiff,
-      editedAt: new Date().toISOString()
-    });
-
-    console.log('EDIT DIFF:', { oldDiff, newDiff });
+    console.log('WORD-LEVEL CHANGES:', changes);
 
     const alertMessage =
       '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
-      '<b>O‘zgargan qism:</b>\n' +
-      `<code>${oldDiff}</code> → <code>${newDiff}</code>\n\n` +
-      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      '<b>O‘zgargan qismlar:</b>\n' +
+      changes.join('\n') +
+      '\n\n' +
+      `👮 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     await bot.sendMessage(chatId, alertMessage, {
       parse_mode: 'HTML',
@@ -205,7 +219,6 @@ bot.on('edited_message', async (msg) => {
     console.error('Edit error:', err);
   }
 });
-
 /* ===============================
    ERROR HANDLER
 ================================ */
