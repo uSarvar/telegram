@@ -1,4 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
+const path = require('path');
 
 /* ===============================
    ENV
@@ -21,26 +23,39 @@ const bot = new TelegramBot(TOKEN, {
 console.log('Bot ishga tushdi');
 
 /* ===============================
-   XOTIRA
+   DB INIT (JSON)
 ================================ */
+const DB_PATH = path.join(__dirname, 'data', 'db.json');
 
-// Takror ID nazorati
-const topicIds = {};
+if (!fs.existsSync(DB_PATH)) {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  fs.writeFileSync(DB_PATH, JSON.stringify({}));
+}
 
-// Xabar matnlari cache (edit diff uchun)
+function loadDB() {
+  return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+}
+
+function saveDB(db) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+}
+
+/* ===============================
+   XOTIRA (edit uchun)
+================================ */
 const messageCache = {};
-
-// Tahrirlar tarixi
 const editHistory = {};
 
 /* ===============================
-   TO‘G‘RI ID PARSER
-   → faqat butun xabar ID bo‘lsa qabul qiladi
+   ID PARSER
+   K/k/К/к → K-XXXX
 ================================ */
 function parseValidId(text) {
   if (!text) return null;
 
-  const match = text.trim().match(/^([Kk])[-–—]?(\d{3,4})$/);
+  const cleaned = text.trim().replace(/\s+/g, '');
+
+  const match = cleaned.match(/^([KkКк])[-–—]?(\d{3,4})$/);
   if (!match) return null;
 
   return 'K-' + match[2];
@@ -56,7 +71,6 @@ function getMessageLink(chatId, messageId) {
 
 /* ===============================
    MESSAGE HANDLER
-   → faqat TAKROR ID da javob
 ================================ */
 bot.on('message', async (msg) => {
   try {
@@ -67,45 +81,47 @@ bot.on('message', async (msg) => {
     const topicId = msg.message_thread_id;
     if (!topicId) return;
 
-    // Cache (edit diff uchun)
+    // cache
     if (!messageCache[chatId]) messageCache[chatId] = {};
     messageCache[chatId][msg.message_id] = msg.text;
 
-    // Topic xotira
-    if (!topicIds[chatId]) topicIds[chatId] = {};
-    if (!topicIds[chatId][topicId]) topicIds[chatId][topicId] = {};
-
     const canonicalId = parseValidId(msg.text);
-    if (!canonicalId) return; // noto‘g‘ri ID → jim
+    if (!canonicalId) return;
+
+    const db = loadDB();
+
+    if (!db[chatId]) db[chatId] = {};
+    if (!db[chatId][topicId]) db[chatId][topicId] = {};
 
     // TAKROR
-    if (topicIds[chatId][topicId][canonicalId]) {
-      const firstMessageId = topicIds[chatId][topicId][canonicalId];
+    if (db[chatId][topicId][canonicalId]) {
+      const firstMessageId = db[chatId][topicId][canonicalId];
 
       const alertMessage =
         '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
         'ID: <b>' + canonicalId + '</b>\n\n' +
-        '🔗 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan ID</a>\n' +
+        '🔗 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan ID</a>\n\n' +
         '🔗 <a href="' + getMessageLink(chatId, msg.message_id) + '">Takror yuborilgan ID</a>\n\n' +
-        '👨🏻‍💻 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
+        '👨🏻‍💻<a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
 
       await bot.sendMessage(chatId, alertMessage, {
         parse_mode: 'HTML',
         reply_to_message_id: msg.message_id,
         message_thread_id: topicId
       });
+
     } else {
-      topicIds[chatId][topicId][canonicalId] = msg.message_id;
+      db[chatId][topicId][canonicalId] = msg.message_id;
+      saveDB(db);
     }
 
   } catch (err) {
-    console.error('Message handler error:', err);
+    console.error('Message error:', err);
   }
 });
 
 /* ===============================
-   EDITED MESSAGE HANDLER
-   → admin alert + diff + tarix
+   EDIT HANDLER
 ================================ */
 bot.on('edited_message', async (msg) => {
   try {
@@ -117,13 +133,11 @@ bot.on('edited_message', async (msg) => {
 
     if (!messageCache[chatId]) messageCache[chatId] = {};
 
-    const oldText = messageCache[chatId][msg.message_id] || '(old text unknown)';
+    const oldText = messageCache[chatId][msg.message_id] || '(old unknown)';
     const newText = msg.text || '(no text)';
 
-    // Cache update
     messageCache[chatId][msg.message_id] = newText;
 
-    // Tarix saqlash
     if (!editHistory[chatId]) editHistory[chatId] = {};
     if (!editHistory[chatId][msg.message_id]) {
       editHistory[chatId][msg.message_id] = [];
@@ -135,15 +149,8 @@ bot.on('edited_message', async (msg) => {
       editedAt: new Date().toISOString()
     });
 
-    // Console log
-    console.log('EDITED MESSAGE:', {
-      chatId,
-      messageId: msg.message_id,
-      oldText,
-      newText
-    });
+    console.log('EDITED:', { oldText, newText });
 
-    // Admin alert
     await bot.sendMessage(
       chatId,
       '✏️ <b>Xabar tahrirlandi</b>\n\n' +
@@ -156,12 +163,12 @@ bot.on('edited_message', async (msg) => {
     );
 
   } catch (err) {
-    console.error('Edited message error:', err);
+    console.error('Edit error:', err);
   }
 });
 
 /* ===============================
-   ERROR HANDLER
+   ERROR
 ================================ */
 bot.on('polling_error', (e) => {
   console.error('Polling error:', e.message);
