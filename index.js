@@ -24,28 +24,26 @@ console.log('Bot ishga tushdi');
    XOTIRA
 ================================ */
 
-// ID takror nazorati
+// Takror ID nazorati
 const topicIds = {};
 
-// Xabar matnlari cache
+// Xabar matnlari cache (edit diff uchun)
 const messageCache = {};
 
 // Tahrirlar tarixi
 const editHistory = {};
 
 /* ===============================
-   VALID ID PARSER
-   → faqat to‘g‘ri ID bo‘lsa qaytaradi
-   → aks holda null
+   TO‘G‘RI ID PARSER
+   → faqat butun xabar ID bo‘lsa qabul qiladi
 ================================ */
 function parseValidId(text) {
   if (!text) return null;
 
-  const match = text.match(/\b([Kk])[-–—]?(\d{3,4})\b/);
+  const match = text.trim().match(/^([Kk])[-–—]?(\d{3,4})$/);
   if (!match) return null;
 
-  const digits = match[2];
-  return 'K-' + digits;
+  return 'K-' + match[2];
 }
 
 /* ===============================
@@ -58,7 +56,7 @@ function getMessageLink(chatId, messageId) {
 
 /* ===============================
    MESSAGE HANDLER
-   → faqat ID takror bo‘lsa javob
+   → faqat TAKROR ID da javob
 ================================ */
 bot.on('message', async (msg) => {
   try {
@@ -69,18 +67,18 @@ bot.on('message', async (msg) => {
     const topicId = msg.message_thread_id;
     if (!topicId) return;
 
-    // Cache saqlash (edit uchun)
+    // Cache (edit diff uchun)
     if (!messageCache[chatId]) messageCache[chatId] = {};
     messageCache[chatId][msg.message_id] = msg.text;
 
-    // Topic xotirasi
+    // Topic xotira
     if (!topicIds[chatId]) topicIds[chatId] = {};
     if (!topicIds[chatId][topicId]) topicIds[chatId][topicId] = {};
 
     const canonicalId = parseValidId(msg.text);
     if (!canonicalId) return; // noto‘g‘ri ID → jim
 
-    // TAKROR bo‘lsa
+    // TAKROR
     if (topicIds[chatId][topicId][canonicalId]) {
       const firstMessageId = topicIds[chatId][topicId][canonicalId];
 
@@ -97,7 +95,6 @@ bot.on('message', async (msg) => {
         message_thread_id: topicId
       });
     } else {
-      // Birinchi marta → jim
       topicIds[chatId][topicId][canonicalId] = msg.message_id;
     }
 
@@ -108,7 +105,7 @@ bot.on('message', async (msg) => {
 
 /* ===============================
    EDITED MESSAGE HANDLER
-   → admin alert + diff log + tarix
+   → admin alert + diff + tarix
 ================================ */
 bot.on('edited_message', async (msg) => {
   try {
@@ -120,11 +117,10 @@ bot.on('edited_message', async (msg) => {
 
     if (!messageCache[chatId]) messageCache[chatId] = {};
 
-    const oldText =
-      messageCache[chatId][msg.message_id] || '(old text not found)';
+    const oldText = messageCache[chatId][msg.message_id] || '(old text unknown)';
     const newText = msg.text || '(no text)';
 
-    // Cache yangilash
+    // Cache update
     messageCache[chatId][msg.message_id] = newText;
 
     // Tarix saqlash
@@ -147,7 +143,7 @@ bot.on('edited_message', async (msg) => {
       newText
     });
 
-    // Adminga qisqa xabar
+    // Admin alert
     await bot.sendMessage(
       chatId,
       '✏️ <b>Xabar tahrirlandi</b>\n\n' +
