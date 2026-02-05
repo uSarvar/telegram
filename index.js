@@ -23,7 +23,7 @@ const bot = new TelegramBot(TOKEN, {
 console.log('Bot ishga tushdi');
 
 /* ===============================
-   DB INIT
+   DB INIT (JSON)
 ================================ */
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 
@@ -41,10 +41,10 @@ function saveDB(db) {
 }
 
 /* ===============================
-   CACHE (edit uchun)
+   CACHE & HISTORY
 ================================ */
-const messageCache = {};
-const editHistory = {};
+const messageCache = {};   // original texts
+const editHistory = {};    // edit logs (RAM)
 
 /* ===============================
    ID PARSER
@@ -61,7 +61,7 @@ function parseValidId(text) {
 }
 
 /* ===============================
-   LINK
+   MESSAGE LINK
 ================================ */
 function getMessageLink(chatId, messageId) {
   const cleanChatId = String(chatId).replace('-100', '');
@@ -69,7 +69,39 @@ function getMessageLink(chatId, messageId) {
 }
 
 /* ===============================
+   TEXT DIFF (ONLY CHANGED PART)
+================================ */
+function getTextDiff(oldText, newText) {
+  let start = 0;
+  let endOld = oldText.length - 1;
+  let endNew = newText.length - 1;
+
+  while (
+    start <= endOld &&
+    start <= endNew &&
+    oldText[start] === newText[start]
+  ) {
+    start++;
+  }
+
+  while (
+    endOld >= start &&
+    endNew >= start &&
+    oldText[endOld] === newText[endNew]
+  ) {
+    endOld--;
+    endNew--;
+  }
+
+  const oldDiff = oldText.substring(start, endOld + 1) || '(o‘chirildi)';
+  const newDiff = newText.substring(start, endNew + 1) || '(qo‘shildi)';
+
+  return { oldDiff, newDiff };
+}
+
+/* ===============================
    MESSAGE HANDLER
+   → only DUPLICATE ID triggers reply
 ================================ */
 bot.on('message', async (msg) => {
   try {
@@ -80,7 +112,7 @@ bot.on('message', async (msg) => {
     const topicId = msg.message_thread_id;
     if (!topicId) return;
 
-    // cache
+    // cache original text
     if (!messageCache[chatId]) messageCache[chatId] = {};
     messageCache[chatId][msg.message_id] = msg.text;
 
@@ -91,14 +123,15 @@ bot.on('message', async (msg) => {
     if (!db[chatId]) db[chatId] = {};
     if (!db[chatId][topicId]) db[chatId][topicId] = {};
 
+    // DUPLICATE CHECK
     if (db[chatId][topicId][canonicalId]) {
       const firstMessageId = db[chatId][topicId][canonicalId];
 
       const alertMessage =
         '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
         `ID: <b>${canonicalId}</b>\n\n` +
-        `🔗 <a href="${getMessageLink(chatId, firstMessageId)}">1-yuborilgan xabar</a>\n\n` +
-        `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan xabar</a>\n\n` +
+        `🔗 <a href="${getMessageLink(chatId, firstMessageId)}">1-yuborilgan ID</a>\n` +
+        `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan ID</a>\n\n` +
         `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
       await bot.sendMessage(chatId, alertMessage, {
@@ -106,7 +139,6 @@ bot.on('message', async (msg) => {
         reply_to_message_id: msg.message_id,
         message_thread_id: topicId
       });
-
     } else {
       db[chatId][topicId][canonicalId] = msg.message_id;
       saveDB(db);
@@ -119,12 +151,13 @@ bot.on('message', async (msg) => {
 
 /* ===============================
    EDITED MESSAGE HANDLER
-   → faqat MATN o‘zgarsa
+   → every text edit
+   → shows ONLY changed part
 ================================ */
 bot.on('edited_message', async (msg) => {
   try {
     if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return; // reaksiya bo‘lsa chiqmaydi
+    if (!msg.text) return; // reaction / non-text edit
 
     const chatId = msg.chat.id;
     const topicId = msg.message_thread_id;
@@ -132,36 +165,35 @@ bot.on('edited_message', async (msg) => {
 
     if (!messageCache[chatId]) messageCache[chatId] = {};
 
-    const oldText = messageCache[chatId][msg.message_id] || '(topilmadi)';
+    const oldText = messageCache[chatId][msg.message_id];
     const newText = msg.text;
 
-    // Agar matn aynan bir xil bo‘lsa → jim
-    if (oldText === newText) return;
+    if (!oldText || oldText === newText) return;
 
-    // Cache update
+    const { oldDiff, newDiff } = getTextDiff(oldText, newText);
+
+    // update cache
     messageCache[chatId][msg.message_id] = newText;
 
-    // Tarix saqlash
+    // save history (RAM)
     if (!editHistory[chatId]) editHistory[chatId] = {};
     if (!editHistory[chatId][msg.message_id]) {
       editHistory[chatId][msg.message_id] = [];
     }
 
     editHistory[chatId][msg.message_id].push({
-      oldText,
-      newText,
+      oldDiff,
+      newDiff,
       editedAt: new Date().toISOString()
     });
 
-    console.log('EDIT DIFF:', { oldText, newText });
+    console.log('EDIT DIFF:', { oldDiff, newDiff });
 
     const alertMessage =
       '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
-      '<b>Oldingi:</b>\n' +
-      `<code>${oldText}</code>\n\n` +
-      '<b>Yangi:</b>\n' +
-      `<code>${newText}</code>\n\n` +
-      `👮 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      '<b>O‘zgargan qism:</b>\n' +
+      `<code>${oldDiff}</code> → <code>${newDiff}</code>\n\n` +
+      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     await bot.sendMessage(chatId, alertMessage, {
       parse_mode: 'HTML',
@@ -175,7 +207,7 @@ bot.on('edited_message', async (msg) => {
 });
 
 /* ===============================
-   ERROR
+   ERROR HANDLER
 ================================ */
 bot.on('polling_error', (e) => {
   console.error('Polling error:', e.message);
