@@ -23,7 +23,7 @@ const bot = new TelegramBot(TOKEN, {
 console.log('Bot ishga tushdi');
 
 /* ===============================
-   DB INIT (JSON)
+   DB INIT
 ================================ */
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
 
@@ -41,7 +41,7 @@ function saveDB(db) {
 }
 
 /* ===============================
-   XOTIRA (edit uchun)
+   CACHE (edit uchun)
 ================================ */
 const messageCache = {};
 const editHistory = {};
@@ -54,7 +54,6 @@ function parseValidId(text) {
   if (!text) return null;
 
   const cleaned = text.trim().replace(/\s+/g, '');
-
   const match = cleaned.match(/^([KkКк])[-–—]?(\d{3,4})$/);
   if (!match) return null;
 
@@ -62,11 +61,11 @@ function parseValidId(text) {
 }
 
 /* ===============================
-   XABAR LINKI
+   LINK
 ================================ */
 function getMessageLink(chatId, messageId) {
   const cleanChatId = String(chatId).replace('-100', '');
-  return 'https://t.me/c/' + cleanChatId + '/' + messageId;
+  return `https://t.me/c/${cleanChatId}/${messageId}`;
 }
 
 /* ===============================
@@ -89,20 +88,18 @@ bot.on('message', async (msg) => {
     if (!canonicalId) return;
 
     const db = loadDB();
-
     if (!db[chatId]) db[chatId] = {};
     if (!db[chatId][topicId]) db[chatId][topicId] = {};
 
-    // TAKROR
     if (db[chatId][topicId][canonicalId]) {
       const firstMessageId = db[chatId][topicId][canonicalId];
 
       const alertMessage =
         '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
-        'ID: <b>' + canonicalId + '</b>\n\n' +
-        '🔗 <a href="' + getMessageLink(chatId, firstMessageId) + '">1-yuborilgan ID</a>\n\n' +
-        '🔗 <a href="' + getMessageLink(chatId, msg.message_id) + '">Takror yuborilgan ID</a>\n\n' +
-        '👨🏻‍💻<a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>';
+        `ID: <b>${canonicalId}</b>\n\n` +
+        `🔗 <a href="${getMessageLink(chatId, firstMessageId)}">1-yuborilgan xabar</a>\n` +
+        `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan xabar</a>\n\n` +
+        `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
       await bot.sendMessage(chatId, alertMessage, {
         parse_mode: 'HTML',
@@ -121,11 +118,13 @@ bot.on('message', async (msg) => {
 });
 
 /* ===============================
-   EDIT HANDLER
+   EDITED MESSAGE HANDLER
+   → faqat MATN o‘zgarsa
 ================================ */
 bot.on('edited_message', async (msg) => {
   try {
     if (!['group', 'supergroup'].includes(msg.chat.type)) return;
+    if (!msg.text) return;
 
     const chatId = msg.chat.id;
     const topicId = msg.message_thread_id;
@@ -133,9 +132,10 @@ bot.on('edited_message', async (msg) => {
 
     if (!messageCache[chatId]) messageCache[chatId] = {};
 
-    const oldText = messageCache[chatId][msg.message_id] || '(old unknown)';
-    const newText = msg.text || '(no text)';
+    const oldText = messageCache[chatId][msg.message_id];
+    if (!oldText || oldText === msg.text) return; // matn o‘zgarmagan
 
+    const newText = msg.text;
     messageCache[chatId][msg.message_id] = newText;
 
     if (!editHistory[chatId]) editHistory[chatId] = {};
@@ -149,12 +149,12 @@ bot.on('edited_message', async (msg) => {
       editedAt: new Date().toISOString()
     });
 
-    console.log('EDITED:', { oldText, newText });
+    console.log('EDITED TEXT:', { oldText, newText });
 
     await bot.sendMessage(
       chatId,
-      '✏️ <b>Xabar tahrirlandi</b>\n\n' +
-      '👨🏻‍💻 <a href="tg://user?id=' + ADMIN_ID + '"><b>Admin</b></a>',
+      '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
+      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`,
       {
         parse_mode: 'HTML',
         reply_to_message_id: msg.message_id,
