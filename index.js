@@ -156,7 +156,7 @@ bot.on('message', async (msg) => {
         `ID: <b>${canonicalId}</b>\n\n` +
         `🔗 <a href="${getMessageLink(chatId, firstMessageId)}">1-yuborilgan ID</a>\n` +
         `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan ID</a>\n\n` +
-        `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+        /*`👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`*/;
 
       await bot.sendMessage(chatId, alertMessage, {
         parse_mode: 'HTML',
@@ -205,9 +205,7 @@ bot.on('edited_message', async (msg) => {
     const alertMessage =
       '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
       '<b>O‘zgargan qismlar:</b>\n' +
-      changes.join('\n') +
-      '\n\n' +
-      `👮 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      changes.join('\n');
 
     await bot.sendMessage(chatId, alertMessage, {
       parse_mode: 'HTML',
