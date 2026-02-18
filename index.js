@@ -185,7 +185,7 @@ bot.on('edited_message', async (msg) => {
       '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
       '<b>O‘zgargan qismlar:</b>\n' +
       changes.join('\n') +
-      '\n\n' +
+      '\n' +
       `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     await bot.sendMessage(chatId, alertMessage, {
