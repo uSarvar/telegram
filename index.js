@@ -184,7 +184,7 @@ function registerHandlers() {
         const text =
           `🚨 <b>TAKROR ID ANIQLANDI</b>\n\n` +
           `<b>${id}</b>\n\n` +
-          `🔗 <a href="${getMessageLink(chatId, firstMsg)}">1-yuborilgan ID</a>\n` +
+          `🔗 <a href="${getMessageLink(chatId, firstMsg)}">1-yuborilgan ID</a>\n\n` +
           `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan ID</a>\n\n` +
           `👮 <a href="tg://user?id=${ADMIN_ID}">Admin</a>`;
 
