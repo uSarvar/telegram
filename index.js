@@ -109,11 +109,32 @@ const userFlood = {}; // spam guard
 function parseValidId(text) {
   if (!text) return null;
 
-  const cleaned = text.replace(/\s+/g, '').toUpperCase();
-  const m = cleaned.match(/^([KК])[-–—]?(\d{3,4})$/);
-  if (!m) return null;
+  // 1️⃣ Normalizatsiya
+  const normalized = text
+    .replace(/[Кк]/g, 'K')     // кирилл → латин K
+    .replace(/[–—]/g, '-')     // uzun tire → -
+    .toUpperCase();
 
-  return `K-${m[2]}`;
+  // 2️⃣ Avval eski qatʼiy formatni tekshiramiz (ESKI LOGIKA)
+  const strict = normalized
+    .replace(/\s+/g, '')
+    .match(/^K-?\d{3,4}$/);
+
+  if (strict) {
+    const digits = strict[0].match(/\d{3,4}/)[0];
+    return `K-${digits}`;
+  }
+
+  // 3️⃣ Keyin matn ichidan ID qidiramiz (YANGI IMKONIYAT)
+  // misollar:
+  // 1.K-3333
+  // 2)K3333
+  // text K-3333 text
+  const relaxedMatch = normalized.match(/(?:^|\D)K-?(\d{3,4})(?!\d)/);
+
+  if (!relaxedMatch) return null;
+
+  return `K-${relaxedMatch[1]}`;
 }
 
 function getMessageLink(chatId, messageId) {
