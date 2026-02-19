@@ -1,207 +1,248 @@
+// ===============================
+// PRO STABLE TELEGRAM BOT
+// ===============================
+
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-/* ===============================
-   ENV
-================================ */
+// ===============================
+// ENV
+// ===============================
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
 
 if (!TOKEN || !ADMIN_ID) {
-  console.error('BOT_TOKEN yoki ADMIN_ID topilmadi');
+  console.error('ENV xato: BOT_TOKEN yoki ADMIN_ID yo‘q');
   process.exit(1);
 }
 
-/* ===============================
-   BOT INIT
-================================ */
-const bot = new TelegramBot(TOKEN, {
-  polling: { interval: 300, autoStart: true }
+// ===============================
+// GLOBAL SAFE HANDLERS
+// ===============================
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT:', err);
 });
 
-console.log('Bot ishga tushdi');
+process.on('unhandledRejection', (err) => {
+  console.error('REJECTION:', err);
+});
 
-/* ===============================
-   DB INIT (JSON)
-================================ */
+// ===============================
+// BOT INIT (Conflict Auto-Fix)
+// ===============================
+let bot;
+
+function startBot() {
+  bot = new TelegramBot(TOKEN, {
+    polling: {
+      interval: 300,
+      autoStart: true,
+      params: { timeout: 10 }
+    }
+  });
+
+  console.log('Bot ishga tushdi');
+
+  // Conflict auto-fix
+  bot.on('polling_error', async (err) => {
+    if (String(err).includes('409')) {
+      console.log('Conflict aniqladi → polling restart...');
+      setTimeout(() => startBot(), 3000);
+    } else {
+      console.error('Polling error:', err.message);
+    }
+  });
+
+  registerHandlers();
+}
+
+startBot();
+
+// ===============================
+// DB SAFE SYSTEM (Anti Corruption)
+// ===============================
 const DB_PATH = path.join(__dirname, 'data', 'db.json');
+const DB_BACKUP = path.join(__dirname, 'data', 'db.backup.json');
 
-if (!fs.existsSync(DB_PATH)) {
+if (!fs.existsSync(path.dirname(DB_PATH))) {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  fs.writeFileSync(DB_PATH, JSON.stringify({}));
 }
 
 function loadDB() {
-  return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  try {
+    if (!fs.existsSync(DB_PATH)) return {};
+    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  } catch (e) {
+    console.error('DB buzildi → backup tiklandi');
+    if (fs.existsSync(DB_BACKUP)) {
+      return JSON.parse(fs.readFileSync(DB_BACKUP, 'utf8'));
+    }
+    return {};
+  }
 }
 
 function saveDB(db) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-}
-
-/* ===============================
-   CACHE (original texts)
-================================ */
-const messageCache = {};
-
-/* ===============================
-   UNIVERSAL ID PARSER
-   K/k/К/к → K-XXXX
-================================ */
-function extractIDs(text) {
-  if (!text) return [];
-
-  const regex = /(?:^|\s|\n|\.|,|\)|\()([KkКк])\s*[-–—]?\s*(\d{3,6})/g;
-
-  const ids = [];
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    ids.push(`K-${match[2]}`);
-  }
-
-  return ids;
-}
-
-/* ===============================
-   MESSAGE LINK
-================================ */
-function getMessageLink(chatId, messageId) {
-  const cleanChatId = String(chatId).replace('-100', '');
-  return `https://t.me/c/${cleanChatId}/${messageId}`;
-}
-
-/* ===============================
-   WORD DIFF
-================================ */
-function getWordLevelChanges(oldText, newText) {
-  const oldWords = oldText.split(/\s+/);
-  const newWords = newText.split(/\s+/);
-
-  const maxLen = Math.max(oldWords.length, newWords.length);
-  const changes = [];
-
-  for (let i = 0; i < maxLen; i++) {
-    const o = oldWords[i];
-    const n = newWords[i];
-
-    if (o === n) continue;
-
-    if (o && !n) {
-      changes.push(`➖ <code>${o}</code>`);
-    } else if (!o && n) {
-      changes.push(`➕ <code>${n}</code>`);
-    } else if (o && n && o !== n) {
-      changes.push(`<code>${o}</code> → <code>${n}</code>`);
-    }
-  }
-
-  return changes;
-}
-
-/* ===============================
-   MESSAGE HANDLER
-   → ONLY DUPLICATE ID ALERT
-================================ */
-bot.on('message', async (msg) => {
   try {
-    if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return;
+    fs.writeFileSync(DB_BACKUP, JSON.stringify(db, null, 2));
+    const tmp = DB_PATH + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+    fs.renameSync(tmp, DB_PATH);
+  } catch (e) {
+    console.error('DB save xato:', e);
+  }
+}
 
-    const chatId = msg.chat.id;
-    const topicId = msg.message_thread_id;
-    if (!topicId) return;
+// ===============================
+// MEMORY SYSTEM
+// ===============================
+const messageCache = {};
+const recentHashes = new Set(); // double-message block
+const userFlood = {}; // spam guard
 
-    // cache text
-    if (!messageCache[chatId]) messageCache[chatId] = {};
-    messageCache[chatId][msg.message_id] = msg.text;
+// ===============================
+// HELPERS
+// ===============================
 
-    const ids = extractIDs(msg.text);
-    if (!ids.length) return;
+// Normalize ID (K/k/К/к → K-XXXX)
+function parseValidId(text) {
+  if (!text) return null;
 
-    const db = loadDB();
-    if (!db[chatId]) db[chatId] = {};
-    if (!db[chatId][topicId]) db[chatId][topicId] = {};
+  const cleaned = text.replace(/\s+/g, '').toUpperCase();
+  const m = cleaned.match(/^([KК])[-–—]?(\d{3,4})$/);
+  if (!m) return null;
 
-    for (const canonicalId of ids) {
+  return `K-${m[2]}`;
+}
 
-      if (db[chatId][topicId][canonicalId]) {
+function getMessageLink(chatId, messageId) {
+  const id = String(chatId).replace('-100', '');
+  return `https://t.me/c/${id}/${messageId}`;
+}
 
-        const firstMessageId = db[chatId][topicId][canonicalId];
+function hashMessage(msg) {
+  return crypto
+    .createHash('md5')
+    .update(msg.chat.id + '_' + msg.message_id + '_' + (msg.text || ''))
+    .digest('hex');
+}
 
-        const alertMessage =
-          '🚨 <b>TAKROR ID ANIQLANDI</b>\n\n' +
-          `<b>ID:</b> <code>${canonicalId}</code>\n\n` +
-          `🔗 <a href="${getMessageLink(chatId, firstMessageId)}">1-yuborilgan ID</a>\n\n` +
+// ===============================
+// SPAM / FLOOD GUARD
+// ===============================
+function isFlood(userId) {
+  const now = Date.now();
+  if (!userFlood[userId]) userFlood[userId] = [];
+
+  userFlood[userId] = userFlood[userId].filter(t => now - t < 5000);
+  userFlood[userId].push(now);
+
+  return userFlood[userId].length > 6; // 5 sec ichida 6+ msg → flood
+}
+
+// ===============================
+// MAIN HANDLERS
+// ===============================
+function registerHandlers() {
+
+  // ===============================
+  // MESSAGE HANDLER
+  // ===============================
+  bot.on('message', async (msg) => {
+    try {
+      if (!['group', 'supergroup'].includes(msg.chat.type)) return;
+      if (!msg.text) return;
+
+      // Flood guard
+      if (isFlood(msg.from.id)) return;
+
+      // Double-message block
+      const h = hashMessage(msg);
+      if (recentHashes.has(h)) return;
+      recentHashes.add(h);
+      setTimeout(() => recentHashes.delete(h), 10000);
+
+      const chatId = msg.chat.id;
+      const topicId = msg.message_thread_id;
+      if (!topicId) return;
+
+      // cache
+      if (!messageCache[chatId]) messageCache[chatId] = {};
+      messageCache[chatId][msg.message_id] = msg.text;
+
+      const id = parseValidId(msg.text);
+      if (!id) return;
+
+      const db = loadDB();
+      db[chatId] ??= {};
+      db[chatId][topicId] ??= {};
+
+      if (db[chatId][topicId][id]) {
+        const firstMsg = db[chatId][topicId][id];
+
+        const text =
+          `🚨 <b>TAKROR ID ANIQLANDI</b>\n\n` +
+          `<b>${id}</b>\n\n` +
+          `🔗 <a href="${getMessageLink(chatId, firstMsg)}">1-yuborilgan ID</a>\n` +
           `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan ID</a>\n\n` +
-          `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+          `👮 <a href="tg://user?id=${ADMIN_ID}">Admin</a>`;
 
-        await bot.sendMessage(chatId, alertMessage, {
+        await bot.sendMessage(chatId, text, {
           parse_mode: 'HTML',
           reply_to_message_id: msg.message_id,
           message_thread_id: topicId
         });
 
       } else {
-        db[chatId][topicId][canonicalId] = msg.message_id;
+        db[chatId][topicId][id] = msg.message_id;
+        saveDB(db);
       }
+
+    } catch (e) {
+      console.error('MSG error:', e);
     }
+  });
 
-    saveDB(db);
+  // ===============================
+  // EDIT HANDLER
+  // ===============================
+  bot.on('edited_message', async (msg) => {
+    try {
+      if (!msg.text) return;
+      if (!['group', 'supergroup'].includes(msg.chat.type)) return;
 
-  } catch (err) {
-    console.error('Message error:', err);
-  }
-});
+      const chatId = msg.chat.id;
+      const topicId = msg.message_thread_id;
+      if (!topicId) return;
 
-/* ===============================
-   EDITED MESSAGE HANDLER
-   → WORD LEVEL DIFF
-================================ */
-bot.on('edited_message', async (msg) => {
-  try {
-    if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return;
+      const oldText = messageCache?.[chatId]?.[msg.message_id];
+      const newText = msg.text;
 
-    const chatId = msg.chat.id;
-    const topicId = msg.message_thread_id;
-    if (!topicId) return;
+      if (!oldText || oldText === newText) return;
 
-    if (!messageCache[chatId]) messageCache[chatId] = {};
+      messageCache[chatId][msg.message_id] = newText;
 
-    const oldText = messageCache[chatId][msg.message_id];
-    const newText = msg.text;
+      const text =
+        `✏️ <b>Xabar tahrirlandi</b>\n\n` +
+        `<code>${oldText}</code>\n⬇️\n<code>${newText}</code>\n\n` +
+        `👮 <a href="tg://user?id=${ADMIN_ID}">Admin</a>`;
 
-    if (!oldText || oldText === newText) return;
+      await bot.sendMessage(chatId, text, {
+        parse_mode: 'HTML',
+        reply_to_message_id: msg.message_id,
+        message_thread_id: topicId
+      });
 
-    const changes = getWordLevelChanges(oldText, newText);
-    if (!changes.length) return;
+    } catch (e) {
+      console.error('EDIT error:', e);
+    }
+  });
+}
 
-    // update cache
-    messageCache[chatId][msg.message_id] = newText;
-
-    const alertMessage =
-      '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +
-      '<b>O‘zgargan qismlar:</b>\n' +
-      changes.join('\n') +
-      '\n' +
-      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
-
-    await bot.sendMessage(chatId, alertMessage, {
-      parse_mode: 'HTML',
-      reply_to_message_id: msg.message_id,
-      message_thread_id: topicId
-    });
-
-  } catch (err) {
-    console.error('Edit error:', err);
-  }
-});
-
-/* ===============================
-   ERROR HANDLER
-================================ */
-bot.on('polling_error', (e) => {
-  console.error('Polling error:', e.message);
-});
+// ===============================
+// KEEP ALIVE (Sleep Protection)
+// ===============================
+setInterval(() => {
+  console.log('Heartbeat → bot tirik');
+}, 60000);
