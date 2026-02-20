@@ -224,43 +224,54 @@ function registerHandlers() {
       console.error('MSG error:', e);
     }
   });
-
-  // ===============================
-  // EDIT HANDLER
-  // ===============================
-  bot.on('edited_message', async (msg) => {
-    try {
-      if (!msg.text) return;
-      if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-
-      const chatId = msg.chat.id;
-      const topicId = msg.message_thread_id;
-      if (!topicId) return;
-
-      const oldText = messageCache?.[chatId]?.[msg.message_id];
+  
+  /* =============================== 
+  EDITED MESSAGE HANDLER 
+  → every text edit 
+  → shows ONLY changed part 
+  ================================ */ 
+  bot.on('edited_message', async (msg) => { 
+    try { 
+      if (!['group', 'supergroup'].includes(msg.chat.type)) return; 
+      if (!msg.text) return; 
+      
+      const chatId = msg.chat.id; 
+      const topicId = msg.message_thread_id; 
+      if (!topicId) return; 
+      
+      if (!messageCache[chatId]) messageCache[chatId] = {};
+      
+      const oldText = messageCache[chatId][msg.message_id]; 
       const newText = msg.text;
 
-      if (!oldText || oldText === newText) return;
+      // Agar eski matn yo‘q yoki o‘zgarmagan bo‘lsa — chiqamiz
+      if (!oldText || oldText === newText) return; 
 
-      messageCache[chatId][msg.message_id] = newText;
-
-      const text =
-        `✏️ <b>Xabar tahrirlandi</b>\n\n` +
-        `<code>${oldText}</code>\n⬇️\n<code>${newText}</code>\n\n` +
-        `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}">Admin</a>`;
-
-      await bot.sendMessage(chatId, text, {
+      // Faqat o‘zgargan so‘zlarni aniqlaymiz
+      const changes = getWordLevelChanges(oldText, newText); 
+      if (!changes.length) return; 
+      
+      // cache update 
+      messageCache[chatId][msg.message_id] = newText; 
+      
+      console.log('WORD-LEVEL CHANGES:', changes); 
+      
+      const alertMessage = 
+        '✏️ <b>Xabar matni o‘zgartirildi</b>\n\n' +  
+        changes.join('\n') + '\n\n' + 
+        👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>; 
+      
+      await bot.sendMessage(chatId, alertMessage, { 
         parse_mode: 'HTML',
         reply_to_message_id: msg.message_id,
-        message_thread_id: topicId
-      });
-
-    } catch (e) {
-      console.error('EDIT error:', e);
-    }
+        message_thread_id: topicId 
+      }); 
+    
+    } catch (err) { 
+      console.error('Edit error:', err); 
+    } 
   });
-}
-
+  
 // ===============================
 // KEEP ALIVE (Sleep Protection)
 // ===============================
