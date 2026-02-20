@@ -207,7 +207,7 @@ function registerHandlers() {
           `<b>${id}</b>\n\n` +
           `🔗 <a href="${getMessageLink(chatId, firstMsg)}">1-yuborilgan ID</a>\n\n` +
           `🔗 <a href="${getMessageLink(chatId, msg.message_id)}">Takror yuborilgan ID</a>\n\n` +
-          `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}">Admin</a>`;
+          `👨🏻‍💻 <a href="tg://user?id=${1193012864}">Admin</a>`;
 
         await bot.sendMessage(chatId, text, {
           parse_mode: 'HTML',
