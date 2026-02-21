@@ -16,6 +16,8 @@ const bot = new TelegramBot(TOKEN, {
   }
 });
 
+console.log('Bot ishga tushdi');
+
 /* ======================= MEMORY ======================= */
 
 const messageCache = {};
@@ -31,18 +33,32 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
+function getMessageLink(chatId, messageId) {
+  const cleanChatId = String(chatId).replace('-100', '');
+  return `https://t.me/c/${cleanChatId}/${messageId}`;
+}
+
 /* ======================= PARSE ID ======================= */
 /* K-1234, k1234, К1234, 1.k-1234 → K-1234 */
 
 function parseValidId(text) {
   if (!text) return null;
 
-  const cleaned = text.replace(/\s+/g, '').toUpperCase();
+  const normalized = text
+    .replace(/[Кк]/g, 'K')
+    .replace(/[–—]/g, '-')
+    .toUpperCase();
 
-  const m = cleaned.match(/(?:^|[^A-Z0-9])([KК])[-–—]?(\d{3,4})(?!\d)/);
-  if (!m) return null;
+  const strict = normalized.replace(/\s+/g, '').match(/^K-?\d{3,4}$/);
+  if (strict) {
+    const digits = strict[0].match(/\d{3,4}/)[0];
+    return `K-${digits}`;
+  }
 
-  return `K-${m[2]}`;
+  const relaxed = normalized.match(/(?:^|\D)K-?(\d{3,4})(?!\d)/);
+  if (!relaxed) return null;
+
+  return `K-${relaxed[1]}`;
 }
 
 /* ======================= WORD DIFF ======================= */
@@ -52,8 +68,8 @@ function getWordLevelChanges(oldText, newText) {
 
   const oldWords = oldText.split(/\s+/);
   const newWords = newText.split(/\s+/);
-  const changes = [];
 
+  const changes = [];
   const maxLen = Math.max(oldWords.length, newWords.length);
 
   for (let i = 0; i < maxLen; i++) {
@@ -68,12 +84,12 @@ function getWordLevelChanges(oldText, newText) {
     }
 
     if (o && !n) {
-      changes.push(`➖ O‘chirildi: <code>${escapeHtml(o)}</code>`);
+      changes.push(`➖ <code>${escapeHtml(o)}</code>`);
       continue;
     }
 
     if (!o && n) {
-      changes.push(`➕ Qo‘shildi: <code>${escapeHtml(n)}</code>`);
+      changes.push(`➕ <code>${escapeHtml(n)}</code>`);
     }
   }
 
@@ -86,22 +102,26 @@ function checkDuplicateId(id, chatId, msgId) {
   if (!id) return;
 
   if (!seenIds.has(chatId)) seenIds.set(chatId, new Map());
-
   const map = seenIds.get(chatId);
 
   if (map.has(id)) {
     const firstMsgId = map.get(id);
 
+    const firstLink = getMessageLink(chatId, firstMsgId);
+    const secondLink = getMessageLink(chatId, msgId);
+
     const text =
       `🚨 <b>TAKROR ID ANIQLANDI</b>\n\n` +
-      `<code>${id}</code>\n\n` +
-      `🔗 1-yuborilgan ID\n\n` +
-      `🔗 Takror yuborilgan ID`;
+      `ID: <b>${id}</b>\n\n` +
+      `🔗 <a href="${firstLink}">1-yuborilgan ID</a>\n\n` +
+      `🔗 <a href="${secondLink}">Takror yuborilgan ID</a>\n\n` +
+      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     bot.sendMessage(chatId, text, {
       parse_mode: 'HTML',
       reply_to_message_id: msgId
     });
+
   } else {
     map.set(id, msgId);
   }
@@ -117,16 +137,13 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const msgId = msg.message_id;
 
-    /* double message block */
     const key = chatId + ':' + msgId;
     if (seenMessages.has(key)) return;
     seenMessages.add(key);
 
-    /* cache save */
     if (!messageCache[chatId]) messageCache[chatId] = {};
     messageCache[chatId][msgId] = msg.text;
 
-    /* duplicate ID */
     const id = parseValidId(msg.text);
     if (id) checkDuplicateId(id, chatId, msgId);
 
@@ -160,8 +177,8 @@ bot.on('edited_message', async (msg) => {
     const alert =
       `✏️ <b>Xabar matni o‘zgartirildi</b>\n\n` +
       `<b>O‘zgargan qismlar:</b>\n\n` +
-      changes.join('\n') + `\n\n
-      👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      changes.join('\n') +
+      `\n\n👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     await bot.sendMessage(chatId, alert, {
       parse_mode: 'HTML',
@@ -183,12 +200,8 @@ process.on('unhandledRejection', (err) => {
   console.error('REJECTION:', err);
 });
 
-/* ======================= HEARTBEAT (Railway Sleep Fix) ======================= */
+/* ======================= HEARTBEAT ======================= */
 
 setInterval(() => {
   console.log('Heartbeat → bot tirik');
 }, 60000);
-
-/* ======================= START ======================= */
-
-console.log('Bot ishga tushdi');
