@@ -1,4 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
+const path = require('path');
 
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
@@ -9,37 +11,49 @@ if (!TOKEN) {
 }
 
 const bot = new TelegramBot(TOKEN, {
-  polling: {
-    interval: 300,
-    autoStart: true,
-    params: { timeout: 10 }
-  }
+  polling: { interval: 300, autoStart: true }
 });
 
 console.log('Bot ishga tushdi');
+
+/* ======================= DB ======================= */
+
+const DB_PATH = path.join(__dirname, 'data', 'db.json');
+
+if (!fs.existsSync(path.dirname(DB_PATH))) {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+}
+
+function loadDB() {
+  if (!fs.existsSync(DB_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveDB(db) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+}
 
 /* ======================= MEMORY ======================= */
 
 const messageCache = {};
 const seenMessages = new Set();
-const seenIds = new Map();
 
 /* ======================= UTILS ======================= */
 
 function escapeHtml(text) {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function getMessageLink(chatId, messageId) {
-  const cleanChatId = String(chatId).replace('-100', '');
-  return `https://t.me/c/${cleanChatId}/${messageId}`;
+  const clean = String(chatId).replace('-100', '');
+  return `https://t.me/c/${clean}/${messageId}`;
 }
 
 /* ======================= PARSE ID ======================= */
-/* K-1234, k1234, К1234, 1.k-1234 → K-1234 */
 
 function parseValidId(text) {
   if (!text) return null;
@@ -64,48 +78,37 @@ function parseValidId(text) {
 /* ======================= WORD DIFF ======================= */
 
 function getWordLevelChanges(oldText, newText) {
-  if (!oldText || !newText) return [];
-
-  const oldWords = oldText.split(/\s+/);
-  const newWords = newText.split(/\s+/);
-
+  const oldW = oldText.split(/\s+/);
+  const newW = newText.split(/\s+/);
+  const max = Math.max(oldW.length, newW.length);
   const changes = [];
-  const maxLen = Math.max(oldWords.length, newWords.length);
 
-  for (let i = 0; i < maxLen; i++) {
-    const o = oldWords[i];
-    const n = newWords[i];
-
+  for (let i = 0; i < max; i++) {
+    const o = oldW[i];
+    const n = newW[i];
     if (o === n) continue;
 
-    if (o && n) {
-      changes.push(` <code>${escapeHtml(o)}</code> → <code>${escapeHtml(n)}</code>`);
-      continue;
-    }
-
-    if (o && !n) {
-      changes.push(`➖ <code>${escapeHtml(o)}</code>`);
-      continue;
-    }
-
-    if (!o && n) {
-      changes.push(`➕ <code>${escapeHtml(n)}</code>`);
-    }
+    if (o && n) changes.push(` <code>${escapeHtml(o)}</code> → <code>${escapeHtml(n)}</code>`);
+    else if (o && !n) changes.push(`➖ <code>${escapeHtml(o)}</code>`);
+    else if (!o && n) changes.push(`➕ <code>${escapeHtml(n)}</code>`);
   }
-
   return changes;
 }
 
-/* ======================= DUPLICATE ID ======================= */
+/* ======================= DUPLICATE (TOPIC-AWARE) ======================= */
 
-function checkDuplicateId(id, chatId, msgId) {
-  if (!id) return;
+function checkDuplicateId(id, chatId, topicId, msgId) {
+  if (!id || !topicId) return;
 
-  if (!seenIds.has(chatId)) seenIds.set(chatId, new Map());
-  const map = seenIds.get(chatId);
+  const db = loadDB();
 
-  if (map.has(id)) {
-    const firstMsgId = map.get(id);
+  if (!db[chatId]) db[chatId] = {};
+  if (!db[chatId][topicId]) db[chatId][topicId] = {};
+
+  const topicMap = db[chatId][topicId];
+
+  if (topicMap[id]) {
+    const firstMsgId = topicMap[id];
 
     const firstLink = getMessageLink(chatId, firstMsgId);
     const secondLink = getMessageLink(chatId, msgId);
@@ -119,22 +122,26 @@ function checkDuplicateId(id, chatId, msgId) {
 
     bot.sendMessage(chatId, text, {
       parse_mode: 'HTML',
-      reply_to_message_id: msgId
+      reply_to_message_id: msgId,
+      message_thread_id: topicId
     });
 
   } else {
-    map.set(id, msgId);
+    topicMap[id] = msgId;
+    saveDB(db);
   }
 }
 
-/* ======================= MESSAGE HANDLER ======================= */
+/* ======================= MESSAGE ======================= */
 
 bot.on('message', async (msg) => {
   try {
     if (!['group', 'supergroup'].includes(msg.chat.type)) return;
     if (!msg.text) return;
+    if (!msg.message_thread_id) return;
 
     const chatId = msg.chat.id;
+    const topicId = msg.message_thread_id;
     const msgId = msg.message_id;
 
     const key = chatId + ':' + msgId;
@@ -145,24 +152,25 @@ bot.on('message', async (msg) => {
     messageCache[chatId][msgId] = msg.text;
 
     const id = parseValidId(msg.text);
-    if (id) checkDuplicateId(id, chatId, msgId);
+    if (id) checkDuplicateId(id, chatId, topicId, msgId);
 
   } catch (e) {
-    console.error('Message error:', e);
+    console.error('MSG error:', e);
   }
 });
 
-/* ======================= EDIT HANDLER ======================= */
+/* ======================= EDIT ======================= */
 
 bot.on('edited_message', async (msg) => {
   try {
+    if (!msg.text || !msg.message_thread_id) return;
     if (!['group', 'supergroup'].includes(msg.chat.type)) return;
-    if (!msg.text) return;
 
     const chatId = msg.chat.id;
     const msgId = msg.message_id;
+    const topicId = msg.message_thread_id;
 
-    if (!messageCache[chatId]) messageCache[chatId] = {};
+    if (!messageCache[chatId]) return;
 
     const oldText = messageCache[chatId][msgId];
     const newText = msg.text;
@@ -176,28 +184,24 @@ bot.on('edited_message', async (msg) => {
 
     const alert =
       `✏️ <b>Xabar matni o‘zgartirildi</b>\n\n` +
-      changes.join('\n') + `\n
-      👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      changes.join('\n\n') +
+      `👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
-    await bot.sendMessage(chatId, alert, {
+    bot.sendMessage(chatId, alert, {
       parse_mode: 'HTML',
-      reply_to_message_id: msgId
+      reply_to_message_id: msgId,
+      message_thread_id: topicId
     });
 
   } catch (e) {
-    console.error('Edit error:', e);
+    console.error('EDIT error:', e);
   }
 });
 
-/* ======================= CRASH PROTECTION ======================= */
+/* ======================= CRASH ======================= */
 
-process.on('uncaughtException', (err) => {
-  console.error('CRASH:', err);
-});
-
-process.on('unhandledRejection', (err) => {
-  console.error('REJECTION:', err);
-});
+process.on('uncaughtException', err => console.error('CRASH:', err));
+process.on('unhandledRejection', err => console.error('REJECTION:', err));
 
 /* ======================= HEARTBEAT ======================= */
 
