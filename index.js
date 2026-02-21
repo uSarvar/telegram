@@ -79,7 +79,7 @@ function getWordLevelChanges(oldText, newText) {
     if (o === n) continue;
 
     if (o && n) {
-      changes.push(`🔁 <code>${escapeHtml(o)}</code> → <code>${escapeHtml(n)}</code>`);
+      changes.push(` <code>${escapeHtml(o)}</code> → <code>${escapeHtml(n)}</code>`);
       continue;
     }
 
@@ -176,9 +176,8 @@ bot.on('edited_message', async (msg) => {
 
     const alert =
       `✏️ <b>Xabar matni o‘zgartirildi</b>\n\n` +
-      `<b>O‘zgargan qismlar:</b>\n\n` +
-      changes.join('\n') +
-      `\n\n👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      changes.join('\n') + `\n\n
+      👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     await bot.sendMessage(chatId, alert, {
       parse_mode: 'HTML',
