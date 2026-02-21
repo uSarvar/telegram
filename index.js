@@ -185,7 +185,7 @@ bot.on('edited_message', async (msg) => {
     const alert =
       `✏️ <b>Xabar matni o‘zgartirildi</b>\n\n` +
       changes.join('\n') +
-      `\n👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
+      `\n\n👨🏻‍💻 <a href="tg://user?id=${ADMIN_ID}"><b>Admin</b></a>`;
 
     bot.sendMessage(chatId, alert, {
       parse_mode: 'HTML',
